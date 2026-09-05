@@ -12,6 +12,15 @@ class SecurityGuard(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    def can_kick(self, member: discord.Member) -> bool:
+        bot_member = member.guild.me
+        return bool(
+            bot_member
+            and bot_member.guild_permissions.kick_members
+            and member != bot_member
+            and member.top_role < bot_member.top_role
+        )
+
     def warning_embed(self) -> discord.Embed:
         warning = discord.Embed(
             title="🚫 ห้ามพิมพ์หรือส่งข้อความในห้องนี้โดยเด็ดขาด! 🚫",
@@ -54,7 +63,7 @@ class SecurityGuard(commands.Cog):
                         await old_message.delete()
                     except discord.NotFound:
                         pass
-                    if old_message.author.kickable:
+                    if self.can_kick(old_message.author):
                         try:
                             await old_message.author.kick(
                                 reason="ส่งข้อความในช่องเฝ้าระวังก่อนบอทเริ่มทำงาน"
@@ -96,15 +105,7 @@ class SecurityGuard(commands.Cog):
                 PROTECTED_CHANNEL_ID,
             )
 
-        try:
-            await message.channel.send(embed=self.warning_embed(), delete_after=10)
-        except discord.Forbidden:
-            self.bot.logger.warning(
-                "ไม่มีสิทธิ์ส่งข้อความเตือนในช่องเฝ้าระวัง %s",
-                PROTECTED_CHANNEL_ID,
-            )
-
-        if not message.author.kickable:
+        if not self.can_kick(message.author):
             self.bot.logger.warning(
                 "ไม่สามารถเตะสมาชิก %s (%s) ได้ เนื่องจากลำดับ Role หรือสิทธิ์",
                 message.author,
