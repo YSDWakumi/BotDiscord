@@ -1,7 +1,24 @@
 {
-  "current_version": "1.0.8",
+  "current_version": "1.0.9",
   "timezone": "Asia/Bangkok",
   "releases": [
+    {
+      "version": "1.0.9",
+      "systems": [
+        "ระบบ BotInfo",
+        "ระบบ Banner BotInfo",
+        "ระบบตรวจสอบทรัพยากรเครื่อง"
+      ],
+      "duties": [
+        "แสดงข้อมูลบอทแบบ Embed สวยงาม",
+        "รองรับ Banner และรูปโปรไฟล์",
+        "แสดง CPU RAM และ Disk"
+      ],
+      "note": "เพิ่ม Cog BotInfo พร้อม Banner และข้อมูลทรัพยากรเครื่อง CPU RAM Disk สำหรับคำสั่ง >botinfo และ /botinfo",
+      "summary": "อัปเดต ระบบ BotInfo, ระบบ Banner BotInfo, ระบบตรวจสอบทรัพยากรเครื่อง โดยเพิ่มหน้าที่: แสดงข้อมูลบอทแบบ Embed สวยงาม, รองรับ Banner และรูปโปรไฟล์, แสดง CPU RAM และ Disk หมายเหตุ: เพิ่ม Cog BotInfo พร้อม Banner และข้อมูลทรัพยากรเครื่อง CPU RAM Disk สำหรับคำสั่ง >botinfo และ /botinfo",
+      "released_at": "2026-09-05T23:49:20+07:00",
+      "timezone": "Asia/Bangkok"
+    },
     {
       "version": "1.0.8",
       "systems": [
