@@ -1,7 +1,30 @@
 {
-  "current_version": "1.0.7",
+  "current_version": "1.0.8",
   "timezone": "Asia/Bangkok",
   "releases": [
+    {
+      "version": "1.0.8",
+      "systems": [
+        "ระบบ BotStatus Online/Offline",
+        "ระบบ Dashboard ServerStats",
+        "ระบบ SecurityGuard",
+        "ระบบ Ticket",
+        "ระบบ Save และ GitHub Auto Update"
+      ],
+      "duties": [
+        "ใช้ห้องสถานะปัจจุบันโดยไม่ลบหรือสร้างซ้ำ",
+        "ค้นหาห้องสถานะจากชื่อเมื่อ ID เดิมใช้ไม่ได้",
+        "รองรับ Unknown Channel โดยไม่ทำให้บอทล้ม",
+        "ลดการอัปเดต Dashboard ซ้ำและป้องกัน Rate Limit",
+        "จัดการ Ticket และส่งแบบประเมินทาง DM",
+        "ลบข้อความและเตะผู้ส่งในช่องเฝ้าระวังพร้อม Log",
+        "บันทึก README และ Push GitHub อัตโนมัติ"
+      ],
+      "note": "แก้ไขปัญหา BotStatus ใช้ห้องเก่าและ Dashboard อัปเดตถี่จนเกิด Unknown Channel และ Rate Limit พร้อมรวมการทำงานของทุกระบบล่าสุด",
+      "summary": "อัปเดต ระบบ BotStatus Online/Offline, ระบบ Dashboard ServerStats, ระบบ SecurityGuard, ระบบ Ticket, ระบบ Save และ GitHub Auto Update โดยเพิ่มหน้าที่: ใช้ห้องสถานะปัจจุบันโดยไม่ลบหรือสร้างซ้ำ, ค้นหาห้องสถานะจากชื่อเมื่อ ID เดิมใช้ไม่ได้, รองรับ Unknown Channel โดยไม่ทำให้บอทล้ม, ลดการอัปเดต Dashboard ซ้ำและป้องกัน Rate Limit, จัดการ Ticket และส่งแบบประเมินทาง DM, ลบข้อความและเตะผู้ส่งในช่องเฝ้าระวังพร้อม Log, บันทึก README และ Push GitHub อัตโนมัติ หมายเหตุ: แก้ไขปัญหา BotStatus ใช้ห้องเก่าและ Dashboard อัปเดตถี่จนเกิด Unknown Channel และ Rate Limit พร้อมรวมการทำงานของทุกระบบล่าสุด",
+      "released_at": "2026-09-05T19:37:56+07:00",
+      "timezone": "Asia/Bangkok"
+    },
     {
       "version": "1.0.7",
       "systems": [
