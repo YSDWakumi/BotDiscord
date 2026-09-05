@@ -1,5 +1,7 @@
 import argparse
 import json
+import shutil
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -53,6 +55,39 @@ def update_readme(history: dict) -> None:
     README_FILE.write_text(content, encoding="utf-8")
 
 
+def git_command() -> str | None:
+    return shutil.which("git") or (
+        r"C:\Program Files\Git\cmd\git.exe"
+        if Path(r"C:\Program Files\Git\cmd\git.exe").exists()
+        else None
+    )
+
+
+def sync_to_github(version: str) -> None:
+    git = git_command()
+    if git is None:
+        raise RuntimeError("ไม่พบ Git สำหรับอัปโหลดข้อมูลไป GitHub")
+
+    commands = [
+        [git, "add", "README.md", "version_history.json"],
+        [git, "commit", "-m", f"docs: update version {version}"],
+        [git, "push", "origin", "main"],
+    ]
+    for command in commands:
+        result = subprocess.run(
+            command,
+            cwd=VERSION_FILE.parent,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if result.returncode != 0:
+            details = (result.stderr or result.stdout).strip()
+            raise RuntimeError(f"Git command failed: {' '.join(command[1:])}\n{details}")
+    print("อัปโหลดข้อมูลเวอร์ชันขึ้น GitHub สำเร็จ")
+
+
 def save_update(version: str, systems: list[str], duties: list[str], note: str) -> None:
     with VERSION_FILE.open(encoding="utf-8") as file:
         history = json.load(file)
@@ -80,6 +115,7 @@ def save_update(version: str, systems: list[str], duties: list[str], note: str) 
     print(f"บันทึกประวัติเวอร์ชัน {version} เรียบร้อยแล้ว")
     print(f"วันเวลา: {release['released_at']}")
     print(f"บทสรุป: {summary}")
+    sync_to_github(version)
 
 
 def interactive_save() -> tuple[str, list[str], list[str], str]:
