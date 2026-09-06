@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,6 +21,7 @@ intents.presences = True
 AUTO_UPDATE_INTERVAL_SECONDS = max(60, int(os.getenv("BOT_AUTO_UPDATE_INTERVAL_SECONDS", "300")))
 AUTO_UPDATE_BRANCH = os.getenv("BOT_AUTO_UPDATE_BRANCH", "main")
 PROJECT_DIR = Path(__file__).resolve().parent
+VERSION_FILE = PROJECT_DIR / "version_history.json"
 
 
 def git_command() -> str | None:
@@ -28,6 +30,11 @@ def git_command() -> str | None:
         if Path(r"C:\Program Files\Git\cmd\git.exe").exists()
         else None
     )
+
+
+def current_version() -> str:
+    with VERSION_FILE.open(encoding="utf-8") as file:
+        return json.load(file)["current_version"]
 
 
 def update_from_github() -> bool:
@@ -157,6 +164,9 @@ bot = Bot(
 
 @bot.event
 async def on_ready():
+    await bot.change_presence(
+        activity=discord.Game(name=f"v{current_version()} /help")
+    )
     print(f"Bot ready: {bot.user}")
 
 
