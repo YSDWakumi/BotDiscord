@@ -1,7 +1,20 @@
 {
-  "current_version": "1.0.9",
+  "current_version": "1.1.0",
   "timezone": "Asia/Bangkok",
   "releases": [
+    {
+      "version": "1.1.0",
+      "systems": [
+        "ระบบ Save Log Embed"
+      ],
+      "duties": [
+        "แจ้งเวอร์ชัน ระบบที่อัปเดต และวันเวลา"
+      ],
+      "note": "ปรับปรุง Log การ Save ให้แสดงเป็น Embed พร้อมวันและเวลาอัปเดต",
+      "summary": "อัปเดต ระบบ Save Log Embed โดยเพิ่มหน้าที่: แจ้งเวอร์ชัน ระบบที่อัปเดต และวันเวลา หมายเหตุ: ปรับปรุง Log การ Save ให้แสดงเป็น Embed พร้อมวันและเวลาอัปเดต",
+      "released_at": "2026-09-06T15:28:11+07:00",
+      "timezone": "Asia/Bangkok"
+    },
     {
       "version": "1.0.9",
       "systems": [
