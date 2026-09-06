@@ -1,20 +1,39 @@
 import argparse
+import asyncio
 import json
+import os
 import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import discord
+from dotenv import load_dotenv
 
 
 VERSION_FILE = Path(__file__).with_name("version_history.json")
 README_FILE = Path(__file__).with_name("README.md")
 README_START = "<!-- VERSION_HISTORY_START -->"
 README_END = "<!-- VERSION_HISTORY_END -->"
+UPDATE_LOG_CHANNEL_ID = 1545032505386860564
 THAILAND_TIMEZONE = timezone(timedelta(hours=7), name="Asia/Bangkok")
+
+load_dotenv()
 
 
 def split_items(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def terminal_time() -> str:
+    return datetime.now(THAILAND_TIMEZONE).strftime("%d/%m/%Y %H:%M:%S")
+
+
+def print_terminal_header(title: str) -> None:
+    print()
+    print("=" * 64)
+    print(f"  {title}")
+    print("=" * 64)
 
 
 def make_summary(systems: list[str], duties: list[str], note: str) -> str:
@@ -71,7 +90,7 @@ def sync_to_github(version: str) -> None:
     commands = [
         [git, "add", "README.md", "version_history.json"],
         [git, "commit", "-m", f"docs: update version {version}"],
-        [git, "push", "origin", "main"],
+        [git, "push", "origin", "HEAD:main"],
     ]
     for command in commands:
         result = subprocess.run(
@@ -88,7 +107,49 @@ def sync_to_github(version: str) -> None:
     print("อัปโหลดข้อมูลเวอร์ชันขึ้น GitHub สำเร็จ")
 
 
+def make_update_embed(
+    version: str,
+    systems: list[str],
+    released_at: str,
+    *,
+    is_duplicate: bool = False,
+) -> discord.Embed:
+    updated_at = datetime.fromisoformat(released_at)
+    embed = discord.Embed(
+        title="มีการอัปเดตระบบ",
+        description="บันทึกการอัปเดตระบบล่าสุดเรียบร้อยแล้ว",
+        colour=discord.Colour(0x5865F2),
+        timestamp=updated_at,
+    )
+    version_label = f"{version} New" if is_duplicate else version
+    embed.add_field(name="เวอร์ชัน", value=f"`{version_label}`", inline=True)
+    embed.add_field(
+        name="ระบบที่อัปเดต",
+        value="\n".join(f"• {system}" for system in systems),
+        inline=False,
+    )
+    embed.set_footer(text="ระบบบันทึกการอัปเดต")
+    return embed
+
+
+async def send_update_log(embed: discord.Embed) -> None:
+    token = os.getenv("DISCORD_TOKEN")
+    if not token:
+        raise RuntimeError("ไม่พบ DISCORD_TOKEN สำหรับส่ง Log การอัปเดต")
+
+    client = discord.Client(intents=discord.Intents.none())
+    try:
+        await client.login(token)
+        channel = await client.fetch_channel(UPDATE_LOG_CHANNEL_ID)
+        await channel.send(embed=embed)
+    finally:
+        await client.close()
+
+
 def save_update(version: str, systems: list[str], duties: list[str], note: str) -> None:
+    print_terminal_header("SAVE UPDATE")
+    print(f"  เวลา       : {terminal_time()}")
+    print(f"  เวอร์ชัน   : {version}")
     with VERSION_FILE.open(encoding="utf-8") as file:
         history = json.load(file)
 
@@ -103,6 +164,9 @@ def save_update(version: str, systems: list[str], duties: list[str], note: str) 
         "timezone": "Asia/Bangkok",
     }
     releases = history.setdefault("releases", [])
+    is_duplicate = any(item.get("version") == version for item in releases)
+    if is_duplicate:
+        print(f"  สถานะ     : พบเวอร์ชันซ้ำ กำลังอัปเดตข้อมูลล่าสุด")
     releases[:] = [item for item in releases if item.get("version") != version]
     releases.insert(0, release)
     history["current_version"] = version
@@ -112,10 +176,24 @@ def save_update(version: str, systems: list[str], duties: list[str], note: str) 
         json.dump(history, file, ensure_ascii=False, indent=2)
         file.write("\n")
 
-    print(f"บันทึกประวัติเวอร์ชัน {version} เรียบร้อยแล้ว")
-    print(f"วันเวลา: {release['released_at']}")
-    print(f"บทสรุป: {summary}")
+    print("  สถานะ     : บันทึกประวัติเวอร์ชันสำเร็จ")
+    print(f"  อัปเดตเมื่อ: {release['released_at']}")
+    print(f"  สรุป       : {summary}")
     sync_to_github(version)
+    print("  สถานะ     : กำลังส่ง Embed Log ไปยัง Discord...")
+    asyncio.run(
+        send_update_log(
+            make_update_embed(
+                version,
+                systems,
+                release["released_at"],
+                is_duplicate=is_duplicate,
+            )
+        )
+    )
+    print(f"  สถานะ     : ส่ง Log ไปยังช่อง {UPDATE_LOG_CHANNEL_ID} สำเร็จ")
+    print(f"  เสร็จสิ้น  : {terminal_time()}")
+    print("=" * 64)
 
 
 def interactive_save() -> tuple[str, list[str], list[str], str]:
