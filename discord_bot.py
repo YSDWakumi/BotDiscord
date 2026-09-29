@@ -158,6 +158,7 @@ class Bot(commands.Bot):
 # สร้าง bot instance รองรับ >, / และการ mention บอท
 bot = Bot(
     command_prefix=commands.when_mentioned_or(">", "/"),
+    help_command=None,
     intents=intents,
 )
 

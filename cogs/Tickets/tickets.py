@@ -11,9 +11,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from cogs._ui import ACCENT, SUCCESS, error_embed, make_embed, success_embed
+
 
 THAILAND = timezone(timedelta(hours=7), name="Asia/Bangkok")
-PINK = discord.Colour(0xFF00F7)
+PINK = ACCENT
 BANNER_URL = "https://cdn.discordapp.com/attachments/1533456998656639166/1545597127864877098/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f776174747061642d6d656469612d736572766963652f53746f7279496d6167652f53447a42367565753750636b47673d3d2d313235303830333631312e313730346236396665663633666430613931323033343.gif?ex=6a9cb8ff&is=6a9b677f&hm=5c73ed8650c626c83c44e40c15593e905b839ca07709c8f9077b664b9a522670"
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "tickets"
 TRANSCRIPT_DIR = DATA_DIR / "transcripts"
@@ -150,7 +152,10 @@ class TicketModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         cog = interaction.client.get_cog("Tickets")
         if cog is None:
-            await interaction.response.send_message("ระบบ Ticket ยังไม่พร้อมใช้งาน", ephemeral=True)
+            await interaction.response.send_message(
+                embed=error_embed("ระบบ Ticket ยังไม่พร้อมใช้งาน"),
+                ephemeral=True,
+            )
             return
         details = {field.label: str(field.value) for field in self.inputs}
         await cog.create_ticket(interaction, self.ticket_type, details)
@@ -221,7 +226,10 @@ class ResetTicketView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("เฉพาะผู้ที่เริ่มคำสั่งนี้เท่านั้นที่ยืนยันได้", ephemeral=True)
+            await interaction.response.send_message(
+                embed=error_embed("ยืนยันรายการนี้ไม่ได้", "เฉพาะผู้ที่เริ่มคำสั่งเท่านั้นที่ยืนยันได้"),
+                ephemeral=True,
+            )
             return False
         return True
 
@@ -231,12 +239,18 @@ class ResetTicketView(discord.ui.View):
         await self.cog.reset_all_tickets(interaction)
         for child in self.children:
             child.disabled = True
-        await interaction.edit_original_response(content="รีเซ็ตระบบ Ticket ทั้งหมดเรียบร้อยแล้ว", view=self)
+        await interaction.edit_original_response(
+            embed=success_embed("รีเซ็ต Ticket เรียบร้อย", "จัดการข้อมูลในเซิร์ฟเวอร์นี้แล้ว"),
+            view=self,
+        )
         self.stop()
 
     @discord.ui.button(label="ยกเลิก", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="ยกเลิกการ Reset ระบบ Ticket แล้ว", view=None)
+        await interaction.response.edit_message(
+            embed=make_embed("ยกเลิกการรีเซ็ต", "ไม่มีการเปลี่ยนแปลงข้อมูล"),
+            view=None,
+        )
         self.stop()
 
 
@@ -255,11 +269,17 @@ class TicketControls(discord.ui.View):
 
     @discord.ui.button(label="เพิ่มผู้เล่น", emoji="👥", style=discord.ButtonStyle.secondary, custom_id="ticket:add")
     async def add(self, interaction: discord.Interaction, _: discord.ui.Button):
-        await interaction.response.send_message("ใช้ `/ticket add @ผู้เล่น` เพื่อเพิ่มผู้เล่น", ephemeral=True)
+        await interaction.response.send_message(
+            embed=make_embed("👥 เพิ่มผู้เล่นใน Ticket", "ใช้คำสั่ง `/ticket add @ผู้เล่น`"),
+            ephemeral=True,
+        )
 
     @discord.ui.button(label="เปลี่ยนสถานะ", emoji="📌", style=discord.ButtonStyle.secondary, custom_id="ticket:status")
     async def status(self, interaction: discord.Interaction, _: discord.ui.Button):
-        await interaction.response.send_message("ใช้ `/ticket status` เพื่อเปลี่ยนสถานะ", ephemeral=True)
+        await interaction.response.send_message(
+            embed=make_embed("📌 เปลี่ยนสถานะ Ticket", "ใช้คำสั่ง `/ticket status`"),
+            ephemeral=True,
+        )
 
     @discord.ui.button(label="Transcript", emoji="📝", style=discord.ButtonStyle.secondary, custom_id="ticket:transcript")
     async def transcript(self, interaction: discord.Interaction, _: discord.ui.Button):
@@ -289,7 +309,14 @@ class Tickets(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.data_lock = asyncio.Lock()
-        self.data: dict[str, Any] = {"tickets": {}, "history": [], "stats": {}, "panel_message_id": None}
+        self.create_lock = asyncio.Lock()
+        self.data: dict[str, Any] = {
+            "tickets": {},
+            "history": [],
+            "stats": {},
+            "panel_message_id": None,
+            "last_id": 0,
+        }
         self.created_at: dict[tuple[int, int], datetime] = {}
         self.panel_task: asyncio.Task[None] | None = None
 
@@ -304,6 +331,14 @@ class Tickets(commands.Cog):
         self.data.setdefault("tickets", {})
         self.data.setdefault("history", [])
         self.data.setdefault("stats", {})
+        counter_data = load_json(DATA_DIR / "ticket_counter.json", {})
+        if not isinstance(counter_data, dict):
+            raise RuntimeError("ไฟล์ตัวนับ Ticket ต้องเป็น JSON object")
+        self.data["last_id"] = max(
+            int(self.data.get("last_id", 0)),
+            int(counter_data.get("last_id", 0)),
+            max((int(ticket_id) for ticket_id in self.data["tickets"]), default=0),
+        )
         self.bot.add_view(TicketPanel())
         self.bot.add_view(TicketControls())
         for record in self.data["tickets"].values():
@@ -325,21 +360,51 @@ class Tickets(commands.Cog):
         async with self.data_lock:
             save_json(DATA_DIR / "tickets.json", self.data)
             save_json(DATA_DIR / "ticket_history.json", self.data["history"])
-            save_json(DATA_DIR / "ticket_counter.json", {"last_id": max([int(i) for i in self.data["tickets"]] or [0])})
+            self.data["last_id"] = max(
+                int(self.data.get("last_id", 0)),
+                max((int(ticket_id) for ticket_id in self.data["tickets"]), default=0),
+            )
+            save_json(DATA_DIR / "ticket_counter.json", {"last_id": self.data["last_id"]})
 
     async def ensure_panel(self) -> None:
         await self.bot.wait_until_ready()
         channel = self.bot.get_channel(TicketConfig.panel_channel_id)
         if not isinstance(channel, discord.TextChannel):
+            self.bot.logger.warning("ไม่พบห้อง Ticket Panel %s", TicketConfig.panel_channel_id)
             return
-        embed = discord.Embed(
-            title="🎀 ˚₊‧ ศูนย์ช่วยเหลือ ♡ ‧₊˚ 🎀",
-            description="สวัสดีค่าา~ 👋🏻💗\n\nหากคุณมีปัญหา หรือต้องการติดต่อทีมงาน\nสามารถเปิด Ticket เพื่อแจ้งเรื่องกับเราได้เลยนะคะ ✨",
-            colour=PINK,
+        embed = make_embed(
+            "🎫 ศูนย์ช่วยเหลือ",
+            "เลือกประเภทเรื่องที่ต้องการติดต่อทีมงาน ระบบจะสร้างห้องส่วนตัวให้คุณ\n"
+            "กรอกรายละเอียดให้ครบถ้วนเพื่อให้ทีมงานช่วยเหลือได้รวดเร็วยิ่งขึ้น",
         )
         embed.set_image(url=BANNER_URL)
-        await channel.purge(limit=None, reason="รีเฟรช Ticket panel")
-        message = await channel.send(embed=embed, view=TicketPanel())
+        message = None
+        message_id = self.data.get("panel_message_id")
+        if message_id:
+            try:
+                message = await channel.fetch_message(int(message_id))
+                if (
+                    message.author.id != self.bot.user.id
+                    or not message.embeds
+                    or message.embeds[0].title
+                    not in {"🎫 ศูนย์ช่วยเหลือ", "🎀 ˚₊‧ ศูนย์ช่วยเหลือ ♡ ‧₊˚ 🎀"}
+                ):
+                    message = None
+            except discord.NotFound:
+                message = None
+        if message is None:
+            async for candidate in channel.history(limit=50):
+                if candidate.author.id == self.bot.user.id and candidate.embeds:
+                    if candidate.embeds[0].title in {
+                        "🎫 ศูนย์ช่วยเหลือ",
+                        "🎀 ˚₊‧ ศูนย์ช่วยเหลือ ♡ ‧₊˚ 🎀",
+                    }:
+                        message = candidate
+                        break
+        if message is None:
+            message = await channel.send(embed=embed, view=TicketPanel())
+        else:
+            await message.edit(embed=embed, view=TicketPanel())
         self.data["panel_message_id"] = message.id
         await self.persist()
 
@@ -378,10 +443,16 @@ class Tickets(commands.Cog):
 
     async def staff_check(self, interaction: discord.Interaction) -> bool:
         if not isinstance(interaction.user, discord.Member) or not self.is_staff(interaction.user):
-            await interaction.response.send_message("คำสั่งนี้ใช้ได้เฉพาะ Staff", ephemeral=True)
+            await interaction.response.send_message(
+                embed=error_embed("ไม่มีสิทธิ์ใช้งาน", "คำสั่งนี้สำหรับทีมงานเท่านั้น"),
+                ephemeral=True,
+            )
             return False
         if not isinstance(interaction.channel, discord.TextChannel) or not self.ticket_record(interaction.channel):
-            await interaction.response.send_message("ใช้คำสั่งนี้ในห้อง Ticket เท่านั้น", ephemeral=True)
+            await interaction.response.send_message(
+                embed=error_embed("ไม่พบ Ticket", "ใช้คำสั่งนี้ภายในห้อง Ticket เท่านั้น"),
+                ephemeral=True,
+            )
             return False
         return True
 
@@ -392,14 +463,36 @@ class Tickets(commands.Cog):
         details: dict[str, str],
         *,
         ignore_limits: bool = False,
+        is_test: bool = False,
+    ) -> None:
+        async with self.create_lock:
+            await self._create_ticket(
+                interaction,
+                ticket_type,
+                details,
+                ignore_limits=ignore_limits,
+                is_test=is_test,
+            )
+
+    async def _create_ticket(
+        self,
+        interaction: discord.Interaction,
+        ticket_type: str,
+        details: dict[str, str],
+        *,
+        ignore_limits: bool,
+        is_test: bool,
     ) -> None:
         guild = interaction.guild
         if guild is None:
-            await interaction.response.send_message("ใช้ระบบ Ticket ได้เฉพาะในเซิร์ฟเวอร์", ephemeral=True)
+            await interaction.response.send_message(
+                embed=error_embed("ใช้คำสั่งนี้ไม่ได้", "ระบบ Ticket ใช้งานได้เฉพาะในเซิร์ฟเวอร์"),
+                ephemeral=True,
+            )
             return
         await interaction.response.defer(ephemeral=True)
-        if ignore_limits:
-            await self.clear_user_tickets(guild, interaction.user.id)
+        if is_test:
+            await self.clear_user_test_tickets(guild, interaction.user.id)
         if not ignore_limits and TicketConfig.cooldown_seconds:
             latest_created: datetime | None = None
             for record in self.data["tickets"].values():
@@ -419,22 +512,26 @@ class Tickets(commands.Cog):
                 if elapsed < TicketConfig.cooldown_seconds:
                     remaining = max(1, int(TicketConfig.cooldown_seconds - elapsed))
                     await interaction.followup.send(
-                        f"กรุณารออีก {remaining} วินาทีก่อนสร้าง Ticket ใหม่",
+                        embed=error_embed("กรุณารอสักครู่", f"ลองสร้าง Ticket ใหม่ได้ในอีก **{remaining} วินาที**"),
                         ephemeral=True,
                     )
                     return
         active = [
             record for record in self.data["tickets"].values()
-            if record["guild_id"] == guild.id
-            and record["user_id"] == interaction.user.id
-            and record["status"] != "🔴 ปิด Ticket"
+            if record.get("guild_id") == guild.id
+            and record.get("user_id") == interaction.user.id
+            and record.get("status") != "🔴 ปิด Ticket"
         ]
         if not ignore_limits and len(active) >= TicketConfig.max_per_user:
-            await interaction.followup.send("คุณมี Ticket ที่ยังเปิดอยู่ครบจำนวนสูงสุดแล้ว", ephemeral=True)
+            await interaction.followup.send(
+                embed=error_embed("มี Ticket ที่ยังเปิดอยู่", "ปิด Ticket เดิมก่อนเปิดเรื่องใหม่"),
+                ephemeral=True,
+            )
             return
         category = guild.get_channel(TicketConfig.category_id) if TicketConfig.category_id else None
         staff_role = guild.get_role(TicketConfig.staff_role_id) if TicketConfig.staff_role_id else None
-        counter = max([int(i) for i in self.data["tickets"]] or [0]) + 1
+        counter = int(self.data.get("last_id", 0)) + 1
+        self.data["last_id"] = counter
         info = TICKET_TYPES[ticket_type]
         name = f"{info['prefix']}-{counter:04d}-{safe_name(interaction.user.display_name)}"
         overwrites = {
@@ -449,42 +546,40 @@ class Tickets(commands.Cog):
             "id": counter, "guild_id": guild.id, "channel_id": channel.id, "user_id": interaction.user.id,
             "username": str(interaction.user), "type": ticket_type, "details": details, "staff_id": None,
             "created_at": now_iso(), "closed_at": None, "close_reason": None, "status": "🟢 รอทีมงานรับเรื่อง",
-            "priority": "normal", "rating": None,
+            "priority": "normal", "rating": None, "is_test": is_test,
         }
         self.data["tickets"][str(counter)] = record
         self.data["history"].append({"action": "created", "ticket_id": counter, "at": now_iso(), "user_id": interaction.user.id})
         await self.persist()
         embed = self.ticket_embed(record, interaction.user.mention)
         message = "สร้าง Ticket ทดสอบแล้ว" if ignore_limits else "สร้าง Ticket แล้ว"
-        await interaction.followup.send(f"{message}: {channel.mention}", ephemeral=True)
+        await interaction.followup.send(
+            embed=success_embed(f"🎫 {message}", f"เปิดห้องส่วนตัวได้ที่ {channel.mention}"),
+            ephemeral=True,
+        )
         ticket_message = await channel.send(embed=embed, view=TicketControls())
         record["message_id"] = ticket_message.id
         await self.persist()
         if staff_role:
             await channel.send(f"🔔 {staff_role.mention} มี Ticket ใหม่", allowed_mentions=discord.AllowedMentions(roles=True))
 
-    async def clear_user_tickets(self, guild: discord.Guild, user_id: int) -> None:
+    async def clear_user_test_tickets(self, guild: discord.Guild, user_id: int) -> None:
         records = [
             (ticket_id, record)
             for ticket_id, record in self.data["tickets"].items()
-            if record.get("guild_id") == guild.id and record.get("user_id") == user_id
+            if record.get("guild_id") == guild.id
+            and record.get("user_id") == user_id
+            and record.get("is_test")
         ]
-        known_channel_ids = {record.get("channel_id") for _, record in records}
-        orphan_channels = [
-            channel for channel in guild.text_channels
-            if channel.topic and f"ticket_owner={user_id}" in channel.topic
-            and channel.id not in known_channel_ids
-        ]
+        removed_ticket_ids = {record.get("id") for _, record in records}
         for ticket_id, record in records:
             channel = guild.get_channel(record.get("channel_id", 0))
             if isinstance(channel, discord.TextChannel):
-                await channel.delete(reason="ล้าง Ticket เดิมเพื่อทดสอบระบบ")
+                await channel.delete(reason="ล้าง Ticket ทดสอบเดิม")
             self.data["tickets"].pop(ticket_id, None)
-        for channel in orphan_channels:
-            await channel.delete(reason="ล้างห้อง Ticket ค้างเพื่อทดสอบระบบ")
         self.data["history"] = [
             event for event in self.data["history"]
-            if event.get("user_id") != user_id
+            if event.get("ticket_id") not in removed_ticket_ids
         ]
         await self.persist()
 
@@ -498,12 +593,13 @@ class Tickets(commands.Cog):
                 "หลักฐาน (ถ้ามี)": "-",
             },
             ignore_limits=True,
+            is_test=True,
         )
 
     def ticket_embed(self, record: dict[str, Any], opener: str | None = None) -> discord.Embed:
         info = TICKET_TYPES[record["type"]]
         emoji, priority = PRIORITIES[record["priority"]]
-        embed = discord.Embed(title=f"{info['emoji']} Ticket #{record['id']:04d}", colour=PINK)
+        embed = make_embed(f"{info['emoji']} Ticket #{record['id']:04d}")
         embed.set_image(url=BANNER_URL)
         embed.add_field(name="ผู้เปิด", value=opener or f"<@{record['user_id']}>", inline=True)
         embed.add_field(name="ประเภท", value=f"{info['emoji']} {info['label']}", inline=True)
@@ -543,6 +639,12 @@ class Tickets(commands.Cog):
         if action in {"claim", "transcript"}:
             await interaction.response.defer(ephemeral=True)
         if action == "claim":
+            if record.get("staff_id"):
+                await interaction.followup.send(
+                    embed=error_embed("Ticket ถูกรับเรื่องแล้ว", f"ผู้รับผิดชอบ: <@{record['staff_id']}>"),
+                    ephemeral=True,
+                )
+                return
             record["staff_id"] = interaction.user.id
             record["status"] = "🔵 กำลังตรวจสอบ"
             stats = self.data["stats"].setdefault(str(interaction.user.id), {"claimed": 0, "closed": 0, "total_rating": 0, "rating_count": 0})
@@ -550,10 +652,17 @@ class Tickets(commands.Cog):
             await self.persist()
             await self.update_ticket_embed(interaction.channel, record)
             await interaction.channel.edit(name=f"🔵・{interaction.channel.name.split('・')[-1]}")
-            await interaction.followup.send(f"🖐️ {interaction.user.mention} รับเรื่อง Ticket นี้แล้ว", ephemeral=False)
+            await interaction.followup.send(
+                embed=success_embed("🖐️ รับเรื่อง Ticket แล้ว", f"ผู้รับผิดชอบ: {interaction.user.mention}"),
+                ephemeral=False,
+            )
         elif action == "transcript":
             file = await self.make_transcript(interaction.channel, record)
-            await interaction.followup.send("สร้าง Transcript แล้ว", file=file, ephemeral=True)
+            await interaction.followup.send(
+                embed=success_embed("📝 สร้าง Transcript แล้ว", "ดาวน์โหลดไฟล์แนบเพื่อดูประวัติการสนทนา"),
+                file=file,
+                ephemeral=True,
+            )
         else:
             return
 
@@ -639,7 +748,10 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
         if record is None:
             return
         if record.get("status") == "🔴 ปิด Ticket":
-            await interaction.response.send_message("Ticket นี้ปิดไปแล้ว", ephemeral=True)
+            await interaction.response.send_message(
+                embed=error_embed("Ticket นี้ปิดแล้ว"),
+                ephemeral=True,
+            )
             return
         await interaction.response.defer(ephemeral=True)
         record.update({"status": "🔴 ปิด Ticket", "closed_at": now_iso(), "close_reason": reason})
@@ -648,12 +760,19 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
             stats["closed"] += 1
         file = await self.make_transcript(channel, record)
         channel = await channel.edit(name=f"🔒・closed-{record['id']:04d}-{safe_name(record['username'].split('#')[0])}")
-        await interaction.followup.send("✅ ปิด Ticket แล้ว และสร้าง Transcript เรียบร้อย", ephemeral=True)
-        await channel.send(embed=discord.Embed(
-            title="✅ Ticket ได้รับการแก้ไขแล้ว",
-            description=f"Ticket ID: #{record['id']:04d}\nเหตุผลที่ปิด: {reason}\n\nห้องนี้จะถูกลบอัตโนมัติใน {TicketConfig.delete_delay} วินาที",
-            colour=discord.Colour.green(),
-        ).set_image(url=BANNER_URL))
+        await interaction.followup.send(
+            embed=success_embed("✅ ปิด Ticket แล้ว", "สร้าง Transcript และบันทึกประวัติเรียบร้อย"),
+            ephemeral=True,
+        )
+        close_embed = make_embed(
+            "✅ ปิด Ticket เรียบร้อย",
+            f"**Ticket:** `#{record['id']:04d}`\n"
+            f"**เหตุผล:** {reason}\n\n"
+            f"ห้องนี้จะถูกลบอัตโนมัติใน {TicketConfig.delete_delay} วินาที",
+            colour=SUCCESS,
+        )
+        close_embed.set_image(url=BANNER_URL)
+        await channel.send(embed=close_embed)
         opener = interaction.guild.get_member(record["user_id"]) if interaction.guild else None
         if opener is None and interaction.guild:
             try:
@@ -670,11 +789,10 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
                 self.bot.logger.warning("ไม่สามารถส่งแบบประเมิน Ticket #%04d ทาง DM ได้", record["id"])
         log_channel = interaction.guild.get_channel(TicketConfig.log_channel_id) if interaction.guild else None
         if isinstance(log_channel, discord.TextChannel):
-            log_embed = discord.Embed(
+            log_embed = make_embed(
                 title=f"🔒 ปิด Ticket #{record['id']:04d}",
                 description="บันทึกการปิด Ticket และ Transcript",
-                colour=discord.Colour.green(),
-                timestamp=datetime.now(timezone.utc),
+                colour=SUCCESS,
             )
             log_embed.set_image(url=BANNER_URL)
             log_embed.add_field(name="ผู้เปิด", value=f"<@{record['user_id']}>", inline=True)
@@ -697,7 +815,10 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
     async def rate_ticket(self, interaction: discord.Interaction, ticket_id: int, score: int) -> None:
         record = self.data["tickets"].get(str(ticket_id))
         if not record or interaction.user.id != record["user_id"] or record["rating"] is not None:
-            await interaction.response.send_message("ไม่สามารถให้คะแนน Ticket นี้ได้", ephemeral=True)
+            await interaction.response.send_message(
+                embed=error_embed("ให้คะแนน Ticket นี้ไม่ได้", "Ticket นี้ไม่มีสิทธิ์ให้คะแนนหรือมีการให้คะแนนแล้ว"),
+                ephemeral=True,
+            )
             return
         await interaction.response.defer(ephemeral=True)
         record["rating"] = score
@@ -706,7 +827,10 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
         stats["total_rating"] += score
         stats["rating_count"] += 1
         await self.persist()
-        await interaction.followup.send(f"ขอบคุณสำหรับคะแนน {score} ดาวนะคะ 💗", ephemeral=True)
+        await interaction.followup.send(
+            embed=success_embed("ขอบคุณสำหรับคะแนน", f"ทีมงานได้รับคะแนน **{score} / 5 ดาว** แล้ว 💗"),
+            ephemeral=True,
+        )
 
     def ticket_channel(self, interaction: discord.Interaction) -> discord.TextChannel | None:
         return interaction.channel if isinstance(interaction.channel, discord.TextChannel) and self.ticket_record(interaction.channel) else None
@@ -715,7 +839,7 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
     async def ticket_claim(self, interaction: discord.Interaction):
         await self.handle_action(interaction, "claim")
 
-    @ticket.command(name="test", description="ล้าง Ticket เดิมของคุณและสร้าง Ticket ทดสอบใหม่")
+    @ticket.command(name="test", description="สร้าง Ticket ทดสอบใหม่และล้างเฉพาะ Ticket ทดสอบเดิม")
     async def ticket_test(self, interaction: discord.Interaction):
         await self.create_test_ticket(interaction)
 
@@ -728,7 +852,7 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
             record.update({"staff_id": None, "status": "🟢 รอทีมงานรับเรื่อง"})
             await self.persist()
             await self.update_ticket_embed(interaction.channel, record)
-            await interaction.response.send_message("ยกเลิกการรับเรื่องแล้ว")
+            await interaction.response.send_message(embed=success_embed("ยกเลิกการรับเรื่องแล้ว"))
 
     @ticket.command(name="transcript", description="สร้าง Transcript")
     async def ticket_transcript(self, interaction: discord.Interaction):
@@ -746,7 +870,9 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
         if not await self.staff_check(interaction):
             return
         await interaction.channel.set_permissions(member, view_channel=True, send_messages=True, read_message_history=True)
-        await interaction.response.send_message(f"เพิ่ม {member.mention} แล้ว")
+        await interaction.response.send_message(
+            embed=success_embed("เพิ่มผู้เล่นแล้ว", f"{member.mention} สามารถดูและส่งข้อความใน Ticket นี้ได้"),
+        )
 
     @ticket.command(name="remove", description="ลบผู้เล่นจาก Ticket")
     @app_commands.describe(member="ผู้เล่นที่ต้องการลบ")
@@ -754,14 +880,28 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
         if not await self.staff_check(interaction):
             return
         await interaction.channel.set_permissions(member, overwrite=None)
-        await interaction.response.send_message(f"ลบ {member.mention} แล้ว")
+        await interaction.response.send_message(embed=success_embed("นำผู้เล่นออกแล้ว", member.mention))
 
     @ticket.command(name="delete", description="ลบ Ticket")
     async def ticket_delete(self, interaction: discord.Interaction):
         if not await self.staff_check(interaction):
             return
         channel = interaction.channel
-        await interaction.response.send_message("กำลังลบ Ticket...", ephemeral=True)
+        record = self.ticket_record(channel)
+        if record:
+            ticket_id = record["id"]
+            self.data["history"].append({
+                "action": "deleted",
+                "ticket_id": ticket_id,
+                "at": now_iso(),
+                "user_id": interaction.user.id,
+            })
+            self.data["tickets"].pop(str(ticket_id), None)
+            await self.persist()
+        await interaction.response.send_message(
+            embed=make_embed("🗑️ กำลังลบ Ticket", "ห้องและข้อมูล Ticket ถูกนำออกจากรายการแล้ว"),
+            ephemeral=True,
+        )
         await channel.delete(reason=f"ลบโดย {interaction.user}")
 
     @ticket.command(name="reopen", description="เปิด Ticket ที่ปิดแล้ว")
@@ -770,12 +910,15 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
             return
         record = self.ticket_record(interaction.channel)
         if record is None or record["status"] != "🔴 ปิด Ticket":
-            await interaction.response.send_message("Ticket นี้ยังไม่อยู่ในสถานะปิด", ephemeral=True)
+            await interaction.response.send_message(
+                embed=error_embed("Ticket นี้ยังไม่ถูกปิด"),
+                ephemeral=True,
+            )
             return
         record.update({"status": "🟢 รอทีมงานรับเรื่อง", "closed_at": None, "close_reason": None})
         await interaction.channel.edit(name=f"🟢・ticket-{record['id']:04d}-{safe_name(record['username'].split('#')[0])}")
         await self.persist()
-        await interaction.response.send_message("🔓 เปิด Ticket ใหม่แล้ว")
+        await interaction.response.send_message(embed=success_embed("🔓 เปิด Ticket อีกครั้งแล้ว"))
 
     @ticket.command(name="status", description="เปลี่ยนสถานะ Ticket")
     @app_commands.choices(status=[
@@ -793,7 +936,9 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
             record["status"] = status.value
             await self.persist()
             await self.update_ticket_embed(interaction.channel, record)
-            await interaction.response.send_message(f"เปลี่ยนสถานะเป็น {status.value} แล้ว")
+            await interaction.response.send_message(
+                embed=success_embed("อัปเดตสถานะ Ticket แล้ว", f"สถานะใหม่: {status.value}"),
+            )
 
     @ticket.command(name="priority", description="เปลี่ยน Priority Ticket")
     @app_commands.choices(priority=[
@@ -810,7 +955,9 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
             record["priority"] = priority.value
             await self.persist()
             await self.update_ticket_embed(interaction.channel, record)
-            await interaction.response.send_message(f"ตั้ง Priority เป็น {PRIORITIES[priority.value][1]} แล้ว")
+            await interaction.response.send_message(
+                embed=success_embed("อัปเดต Priority แล้ว", f"ระดับใหม่: {PRIORITIES[priority.value][1]}"),
+            )
 
     @ticket.command(name="note", description="บันทึก Staff Note ที่ผู้เล่นมองไม่เห็น")
     @app_commands.describe(note="ข้อความ Staff Note")
@@ -821,7 +968,10 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
         if record:
             record.setdefault("staff_notes", []).append({"author_id": interaction.user.id, "note": note, "at": now_iso()})
             await self.persist()
-            await interaction.response.send_message("บันทึก Staff Note แล้ว", ephemeral=True)
+            await interaction.response.send_message(
+                embed=success_embed("บันทึก Staff Note แล้ว", "บันทึกนี้มองเห็นได้เฉพาะทีมงาน"),
+                ephemeral=True,
+            )
 
     @ticket.command(name="rename", description="เปลี่ยนชื่อห้อง Ticket")
     @app_commands.describe(name="ชื่อใหม่ของห้องโดยไม่ต้องใส่ emoji")
@@ -830,7 +980,9 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
             return
         clean = safe_name(name)
         await interaction.channel.edit(name=clean)
-        await interaction.response.send_message(f"เปลี่ยนชื่อห้องเป็น `{clean}` แล้ว")
+        await interaction.response.send_message(
+            embed=success_embed("เปลี่ยนชื่อห้องแล้ว", f"ชื่อใหม่: `{clean}`"),
+        )
 
     @ticket.command(name="history", description="ดูประวัติ Ticket")
     async def ticket_history(self, interaction: discord.Interaction):
@@ -840,17 +992,23 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
         if record:
             events = [event for event in self.data["history"] if event.get("ticket_id") == record["id"]]
             text = "\n".join(f"`{event['at']}` {event['action']}" for event in events) or "ยังไม่มีประวัติ"
-            await interaction.response.send_message(text[:1900], ephemeral=True)
+            await interaction.response.send_message(
+                embed=make_embed(f"🕘 ประวัติ Ticket #{record['id']:04d}", text[:3500]),
+                ephemeral=True,
+            )
 
     @ticket.command(name="reset", description="รีเซ็ต Ticket ทั้งหมดและล้างข้อมูล")
     @app_commands.checks.has_permissions(manage_channels=True)
     async def ticket_reset(self, interaction: discord.Interaction):
-        warning = (
-            "⚠️ **ยืนยันการ Reset ระบบ Ticket ทั้งหมดหรือไม่?**\n"
-            "การทำงานนี้จะลบห้อง Ticket ทั้งหมด ล้างข้อมูล ประวัติ คะแนน และรีเซ็ตเลข Ticket เป็น #0001"
+        warning = make_embed(
+            "⚠️ ยืนยันการรีเซ็ต Ticket",
+            "ต้องการรีเซ็ต Ticket ของเซิร์ฟเวอร์นี้หรือไม่?\n"
+            "ระบบจะลบห้อง Ticket และประวัติที่เกี่ยวข้องในเซิร์ฟเวอร์นี้เท่านั้น "
+            "ข้อมูลของเซิร์ฟเวอร์อื่นจะไม่ถูกแตะต้อง",
+            colour=discord.Colour.orange(),
         )
         await interaction.response.send_message(
-            warning,
+            embed=warning,
             ephemeral=True,
             view=ResetTicketView(self, interaction.user.id),
         )
@@ -859,16 +1017,27 @@ h1 {{ margin: 0 0 6px; font-size: 28px; }} h2 {{ margin: 0 0 16px; font-size: 18
         guild = interaction.guild
         if guild is None:
             return
+        tickets_to_remove = {
+            ticket_id: record
+            for ticket_id, record in self.data["tickets"].items()
+            if record.get("guild_id") == guild.id
+        }
         ticket_channel_ids = {
             int(record["channel_id"])
-            for record in self.data["tickets"].values()
-            if record.get("guild_id") == guild.id and record.get("channel_id")
+            for record in tickets_to_remove.values()
+            if record.get("channel_id")
         }
         for channel_id in ticket_channel_ids:
             channel = guild.get_channel(channel_id)
             if isinstance(channel, discord.TextChannel):
                 await channel.delete(reason=f"Reset Ticket โดย {interaction.user}")
-        self.data = {"tickets": {}, "history": [], "stats": {}, "panel_message_id": None}
+        removed_ids = {record.get("id") for record in tickets_to_remove.values()}
+        for ticket_id in tickets_to_remove:
+            self.data["tickets"].pop(ticket_id, None)
+        self.data["history"] = [
+            event for event in self.data["history"]
+            if event.get("ticket_id") not in removed_ids
+        ]
         await self.persist()
         await self.ensure_panel()
 

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+
 import discord
 from discord.ext import commands
+
+from cogs._ui import ERROR, make_embed
 
 
 PROTECTED_CHANNEL_ID = 1545738839241527356
@@ -11,6 +15,7 @@ EXEMPT_USER_IDS = {407131716830887936, 1438439831502979082}
 class SecurityGuard(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.warning_task: asyncio.Task[None] | None = None
 
     def can_kick(self, member: discord.Member) -> bool:
         bot_member = member.guild.me
@@ -22,13 +27,13 @@ class SecurityGuard(commands.Cog):
         )
 
     def warning_embed(self) -> discord.Embed:
-        warning = discord.Embed(
+        warning = make_embed(
             title="🚫 ห้ามพิมพ์หรือส่งข้อความในห้องนี้โดยเด็ดขาด! 🚫",
             description=(
                 "ห้องนี้ใช้สำหรับตรวจจับบอทหรือบัญชีที่อาจถูกแฮ็ก "
                 "หากส่งข้อความ ระบบจะตรวจสอบและเตะออกทันที"
             ),
-            colour=discord.Colour.red(),
+            colour=ERROR,
         )
         warning.add_field(
             name="⚠️ คำเตือน",
@@ -82,7 +87,11 @@ class SecurityGuard(commands.Cog):
             )
 
     async def cog_load(self) -> None:
-        self.bot.loop.create_task(self.refresh_warning())
+        self.warning_task = asyncio.create_task(self.refresh_warning())
+
+    async def cog_unload(self) -> None:
+        if self.warning_task:
+            self.warning_task.cancel()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
