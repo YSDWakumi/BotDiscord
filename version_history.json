@@ -1,7 +1,25 @@
 {
-  "current_version": "1.1.0",
+  "current_version": "1.1.1",
   "timezone": "Asia/Bangkok",
   "releases": [
+    {
+      "version": "1.1.1",
+      "systems": [
+        "ระบบ BotInfo",
+        "ระบบ Ticket และ Dashboard",
+        "ระบบ Help และ UI"
+      ],
+      "duties": [
+        "แสดง Python discord.py CPU RAM Disk และเวลาเริ่มทำงานภาษาไทย",
+        "ปรับปรุง Embed และคำสั่ง Help ที่เรียกด้วยการแท็กบอท",
+        "ป้องกัน Ticket จริงถูกลบจากการทดสอบและแยกข้อมูลตามเซิร์ฟเวอร์",
+        "รักษาห้อง Dashboard เดิมและลดการอัปเดตซ้ำ"
+      ],
+      "note": "ปรับปรุงประสบการณ์ใช้งานและความเสถียรของระบบโดยรวม",
+      "summary": "อัปเดต ระบบ BotInfo, ระบบ Ticket และ Dashboard, ระบบ Help และ UI โดยเพิ่มหน้าที่: แสดง Python discord.py CPU RAM Disk และเวลาเริ่มทำงานภาษาไทย, ปรับปรุง Embed และคำสั่ง Help ที่เรียกด้วยการแท็กบอท, ป้องกัน Ticket จริงถูกลบจากการทดสอบและแยกข้อมูลตามเซิร์ฟเวอร์, รักษาห้อง Dashboard เดิมและลดการอัปเดตซ้ำ หมายเหตุ: ปรับปรุงประสบการณ์ใช้งานและความเสถียรของระบบโดยรวม",
+      "released_at": "2026-09-30T04:35:37+07:00",
+      "timezone": "Asia/Bangkok"
+    },
     {
       "version": "1.1.0",
       "systems": [
